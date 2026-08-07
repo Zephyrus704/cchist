@@ -1,0 +1,53 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cchist"
+version = "0.3.0"
+description = "Browse, search and resume your Claude Code & Codex sessions — terminal TUI + web UI"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Zephyrus704" }]
+keywords = ["claude", "claude-code", "codex", "cli", "tui", "conversation", "history", "resume"]
+classifiers = [
+    "Environment :: Console",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "textual>=0.60",
+]
+
+[project.optional-dependencies]
+web = [
+    "fastapi>=0.100",
+    "uvicorn>=0.20",
+    "websockets>=12",
+]
+dev = [
+    "pytest>=7.0",
+    "httpx>=0.24",
+]
+
+[project.scripts]
+cchist = "cchist.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Zephyrus704/cchist"
+Repository = "https://github.com/Zephyrus704/cchist"
+Issues = "https://github.com/Zephyrus704/cchist/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cchist"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

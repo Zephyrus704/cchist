@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<!-- SPDX-License-Identifier: MIT -->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>cchist</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="logo">◆</span>
+    <div>
+      <h1>cchist</h1>
+      <p class="tagline" id="tagline"></p>
+    </div>
+  </div>
+  <div class="stats" id="stats"></div>
+  <div class="header-actions">
+    <button id="statsBtn" class="ghost"></button>
+    <button id="cleanupBtn" class="ghost"></button>
+    <button id="shutdownBtn" class="ghost danger"></button>
+  </div>
+</header>
+
+<div class="toolbar">
+  <div class="search-wrap">
+    <input id="search" type="search" placeholder="" autocomplete="off">
+    <label class="chk" id="fulltextLabel"><input type="checkbox" id="fulltext"> </label>
+  </div>
+  <div class="toolbar-right">
+    <select id="sort">
+      <option value="time" id="sortTime"></option>
+      <option value="project" id="sortProject"></option>
+      <option value="turns" id="sortTurns"></option>
+      <option value="size" id="sortSize"></option>
+    </select>
+    <button id="reverse" class="ghost" title="asc/desc">↓</button>
+    <button id="trashBtn" class="ghost"> <span id="trashCount" class="badge">0</span></button>
+  </div>
+</div>
+
+<main>
+  <section id="list" class="list"></section>
+  <aside id="detail" class="detail empty">
+    <div class="detail-placeholder" id="detailPlaceholder"></div>
+  </aside>
+</main>
+
+<div id="toast" class="toast"></div>
+
+<div id="statsModal" class="modal hidden">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2 id="statsModalTitle"></h2>
+      <button id="statsClose" class="ghost">✕</button>
+    </div>
+    <div id="statsBody"></div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
