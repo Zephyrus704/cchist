@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -72,3 +73,67 @@ def do_resume(target_dir: str, session_id: str, provider_name: str = "claude") -
     else:
         os.execvp(exe, argv)
         return 0  # execvp 成功不会返回到这
+
+
+# ---- 在新终端窗口里打开(当前 TUI 不退出) ----
+# 常见终端模拟器探测顺序;$TERMINAL 可覆盖
+_TERMINAL_CANDIDATES = [
+    "gnome-terminal", "konsole", "xfce4-terminal", "alacritty", "kitty",
+    "wezterm", "mate-terminal", "lxterminal", "tilix", "xterm",
+]
+
+
+def detect_terminal() -> str | None:
+    """找到可用的终端模拟器可执行文件路径。优先 $TERMINAL 环境变量。"""
+    env_term = os.environ.get("TERMINAL", "").strip()
+    candidates = ([env_term] if env_term else []) + _TERMINAL_CANDIDATES
+    for term in candidates:
+        exe = shutil.which(term)
+        if exe:
+            return exe
+    return None
+
+
+def _terminal_argv(term: str, inner_cmd: str) -> list[str]:
+    """不同终端模拟器的"跑一条 shell 命令"参数形式不一样。"""
+    name = os.path.basename(term)
+    if name == "gnome-terminal":
+        return [term, "--", "bash", "-c", inner_cmd]
+    if name == "wezterm":
+        return [term, "start", "--", "bash", "-c", inner_cmd]
+    if name == "xfce4-terminal":
+        # -x = 把剩余参数整体当作命令执行(-e 只接单个字符串,容易踩坑)
+        return [term, "-x", "bash", "-c", inner_cmd]
+    # konsole / xterm / alacritty / kitty / mate-terminal / lxterminal / tilix
+    return [term, "-e", "bash", "-c", inner_cmd]
+
+
+def open_in_new_terminal(target_dir: str, session_id: str, provider_name: str = "claude"):
+    """弹出一个独立终端窗口,在其中 resume 会话;cchist 自身保持运行。
+
+    返回 (成功与否, 提示消息)。结束后窗口里留一个 bash,方便确认完再关。
+    """
+    prov = providers.get(provider_name)
+    argv = prov.resume_cmd(target_dir, session_id)
+    tool = shutil.which(argv[0])
+    if not tool:
+        return False, f"未找到 {argv[0]} 命令,请确认 {prov.label} 已安装并在 PATH 中"
+    argv[0] = tool
+
+    term = detect_terminal()
+    if not term:
+        return False, "未找到可用终端模拟器(可设 $TERMINAL 指定,如 export TERMINAL=gnome-terminal)"
+
+    if not target_dir or not os.path.isdir(target_dir):
+        target_dir = os.path.expanduser("~")
+
+    inner = "cd {} && {} ; exec bash".format(shlex.quote(target_dir), shlex.join(argv))
+    try:
+        subprocess.Popen(
+            _terminal_argv(term, inner),
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True,  # 脱离本进程,关掉 cchist 不影响新窗口
+        )
+    except OSError as e:
+        return False, f"启动终端失败:{e}"
+    return True, f"已在新终端打开({os.path.basename(term)}),本列表保持运行"
