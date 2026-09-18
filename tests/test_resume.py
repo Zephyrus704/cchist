@@ -70,6 +70,39 @@ def _fake_popen(calls):
     return FakePopen
 
 
+# ---- 当前终端直接打开(suspend 模式) ----
+def test_run_here_ok(monkeypatch, tmp_path):
+    calls = {}
+
+    def fake_call(argv, cwd=None):
+        calls["argv"], calls["cwd"] = argv, cwd
+        return 0
+
+    monkeypatch.setattr(shutil, "which", lambda c: f"/usr/bin/{c}")
+    monkeypatch.setattr(subprocess, "call", fake_call)
+    ok, rc = resume.run_here(str(tmp_path), "sid-1", "claude")
+    assert ok and rc == 0
+    assert calls["argv"] == ["/usr/bin/claude", "--resume", "sid-1"]
+    assert calls["cwd"] == str(tmp_path)
+
+
+def test_run_here_missing_tool(monkeypatch, tmp_path):
+    monkeypatch.setattr(shutil, "which", lambda c: None)
+    ok, msg = resume.run_here(str(tmp_path), "sid", "claude")
+    assert not ok
+    assert "claude" in msg
+
+
+def test_run_here_orphan_dir_falls_home(monkeypatch):
+    calls = {}
+    monkeypatch.setattr(shutil, "which", lambda c: f"/usr/bin/{c}")
+    monkeypatch.setattr(subprocess, "call",
+                        lambda argv, cwd=None: calls.setdefault("cwd", cwd) or 0)
+    ok, _ = resume.run_here("/nonexistent/dir-xyz", "sid", "codex")
+    assert ok
+    assert calls["cwd"] != "/nonexistent/dir-xyz"
+
+
 def test_open_in_new_terminal_ok(monkeypatch, tmp_path):
     calls = {}
     monkeypatch.setenv("TERMINAL", "gnome-terminal")

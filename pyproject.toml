@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cchist"
-version = "0.3.1"
+version = "0.3.2"
 description = "Browse, search and resume your Claude Code & Codex sessions — terminal TUI + web UI"
 readme = "README.md"
 requires-python = ">=3.9"

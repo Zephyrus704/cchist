@@ -75,6 +75,24 @@ def do_resume(target_dir: str, session_id: str, provider_name: str = "claude") -
         return 0  # execvp 成功不会返回到这
 
 
+# ---- 在当前终端里直接打开(TUI 挂起后调用,退出对话即回到列表) ----
+def run_here(target_dir: str, session_id: str, provider_name: str = "claude"):
+    """在当前终端直接 resume。必须由 TUI 在 suspend 状态下调用。
+
+    返回 (成功与否, 信息):成功时信息为子进程退出码,失败时为错误说明。
+    适用于任何终端(VS Code / PyCharm / 原生终端),无需探测终端模拟器。
+    """
+    prov = providers.get(provider_name)
+    argv = prov.resume_cmd(target_dir, session_id)
+    exe = shutil.which(argv[0])
+    if not exe:
+        return False, f"未找到 {argv[0]} 命令,请确认 {prov.label} 已安装并在 PATH 中"
+    argv[0] = exe
+    if not target_dir or not os.path.isdir(target_dir):
+        target_dir = os.path.expanduser("~")
+    return True, subprocess.call(argv, cwd=target_dir)
+
+
 # ---- 在新终端窗口里打开(当前 TUI 不退出) ----
 # 常见终端模拟器探测顺序;$TERMINAL 可覆盖
 _TERMINAL_CANDIDATES = [

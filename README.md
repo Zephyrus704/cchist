@@ -73,7 +73,8 @@ cchist --help
 |---|---|
 | `↑/↓` | Move |
 | `Enter` | Open (cd + resume) |
-| `o` | Open in a new terminal window; cchist stays open |
+| `o` | Peek in the current terminal; back to the list on exit |
+| `O` | Open in a new terminal window; cchist stays open |
 | `/` | Focus search |
 | `g` | Toggle full-text search |
 | Click header / `s` | Sort by column; click again to reverse |

@@ -104,7 +104,8 @@ class CChistApp(App):
 
     # 注意:resume 不再用 priority 绑定,改由行选中(enter/双击)触发,避免抢占模态弹窗的 enter
     BINDINGS = [
-        Binding("o", "open_terminal", "新终端打开"),
+        Binding("o", "peek", "速览"),
+        Binding("O", "open_terminal", "新窗口打开"),
         Binding("d", "delete", "删除"),
         Binding("e", "export", "导出"),
         Binding("c", "cleanup", "批量清理"),
@@ -278,7 +279,8 @@ class CChistApp(App):
         # 排序不放进来——直接点表头即可,避免冗余
         yield SystemCommand("切换全文搜索", "在整段对话正文里查关键词", self.action_full_text)
         yield SystemCommand("打开 / 恢复选中项", "进入对话,或从回收站恢复(等同回车)", self.action_resume)
-        yield SystemCommand("新终端打开选中项", "弹独立终端窗口 resume,cchist 列表保持打开", self.action_open_terminal)
+        yield SystemCommand("当前终端速览", "挂起列表直接看对话,退出对话即回到列表(等同 o)", self.action_peek)
+        yield SystemCommand("新窗口打开选中项", "弹独立系统终端窗口 resume,列表保持打开(等同 O)", self.action_open_terminal)
         yield SystemCommand("导出选中对话", "导出为 Markdown 到 ~/cchist-exports/", self.action_export)
         yield SystemCommand("删除选中项", "移入回收站,可恢复", self.action_delete)
         yield SystemCommand("批量清理空/孤儿对话", "一次把所有空对话和孤儿会话移入回收站", self.action_cleanup)
@@ -426,13 +428,30 @@ class CChistApp(App):
         resume.write_signal(target_dir, s.session_id, s.provider)
         self.exit(message="resume")
 
+    def action_peek(self):
+        # 挂起 cchist,在当前终端直接跑对话;对话退出后自动回到列表。
+        # VS Code / PyCharm / 原生终端都适用——不依赖新窗口。
+        s = self.current_session()
+        if not s:
+            return
+        if self.view_trash:
+            self.notify("回收站里的会话先按 r 恢复", severity="warning")
+            return
+        target_dir = s.cwd if s.cwd_exists else os.path.expanduser("~")
+        with self.suspend():
+            ok, info = resume.run_here(target_dir, s.session_id, s.provider)
+        if not ok:
+            self.notify(info, severity="error")
+        else:
+            self.reload()  # 对话可能新增了消息,刷新列表
+
     def action_open_terminal(self):
         # 与 action_resume 的区别:不退出 cchist,另开一个终端窗口跑 resume
         s = self.current_session()
         if not s:
             return
         if self.view_trash:
-            self.notify("回收站里的会话不能打开,先按 r 恢复", severity="warning")
+            self.notify("回收站里的会话先按 r 恢复", severity="warning")
             return
         target_dir = s.cwd if s.cwd_exists else os.path.expanduser("~")
         ok, msg = resume.open_in_new_terminal(target_dir, s.session_id, s.provider)
