@@ -41,7 +41,8 @@ Two frontends, one core:
 | 🧹 **Batch cleanup** | Move all empty / orphaned sessions to trash at once |
 | ⬇️ **Export** | Export any conversation to Markdown |
 | 📊 **Stats** | Web overview: sessions-per-day trend and per-project breakdown |
-| ⭐ **Favorites** | Star important sessions |
+| ⭐ **Favorites** | Star important sessions, and filter to **favorites only** (`F`) |
+| 🙈 **Ignore folders** | Hide sessions under chosen folders (`i` / `I`); persists across restarts, never deletes, un-ignore anytime |
 | 🌐 **Bilingual** | English / 中文 UI (auto-detected, or set `CCHIST_LANG`) |
 | 🔧 **Portable** | Env-var overridable paths; Linux / macOS / Windows; Python 3.9+ |
 
@@ -80,6 +81,9 @@ cchist --help
 | Click header / `s` | Sort by column; click again to reverse |
 | `e` | Export selected to Markdown |
 | `f` | Favorite / unfavorite |
+| `F` | Show favorites only (toggle) |
+| `i` | Ignore this session's folder — hides all its sessions (recoverable) |
+| `I` | Manage ignored folders (un-ignore to restore) |
 | `d` | Delete (move to trash) |
 | `c` | Batch-clean empty / orphaned |
 | `t` | View trash |

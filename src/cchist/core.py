@@ -226,6 +226,85 @@ _load_favorites = load_favorites
 _save_favorites = save_favorites
 
 
+# ---- 忽略目录(按文件夹过滤会话,持久化且可恢复) ----
+# 忽略清单存 ~/.claude/.cchist_config.json 的 "ignored_dirs",退出重开仍生效;
+# 只是"不显示",从不删文件,随时可从忽略列表移除以恢复显示。
+def _load_config() -> dict:
+    cf = config.config_file()
+    if cf.exists():
+        try:
+            data = json.loads(cf.read_text())
+            return data if isinstance(data, dict) else {}
+        except (json.JSONDecodeError, OSError):
+            return {}
+    return {}
+
+
+def _save_config(data: dict):
+    try:
+        config.config_file().write_text(json.dumps(data, ensure_ascii=False, indent=2))
+    except OSError:
+        pass
+
+
+def load_ignored() -> list:
+    """已忽略的文件夹列表(规范化后的绝对路径)。"""
+    dirs = _load_config().get("ignored_dirs", [])
+    if not isinstance(dirs, list):
+        return []
+    return [str(d) for d in dirs]
+
+
+def save_ignored(dirs):
+    """去重 + 规范化 + 排序后写回,保持文件稳定、可读。"""
+    data = _load_config()
+    norm = sorted({os.path.normpath(os.path.expanduser(str(d)))
+                   for d in dirs if str(d).strip()})
+    data["ignored_dirs"] = norm
+    _save_config(data)
+
+
+def add_ignored(path: str) -> list:
+    dirs = load_ignored()
+    p = os.path.normpath(os.path.expanduser(path))
+    if p not in dirs:
+        dirs.append(p)
+    save_ignored(dirs)
+    return load_ignored()
+
+
+def remove_ignored(path: str) -> list:
+    p = os.path.normpath(os.path.expanduser(path))
+    save_ignored([d for d in load_ignored() if d != p])
+    return load_ignored()
+
+
+def _within(child: str, parent: str) -> bool:
+    """child 等于 parent 或在其之下(按路径前缀比较,不解析符号链接,兼容已删目录)。"""
+    if not child or not parent:
+        return False
+    child = os.path.normpath(child)
+    parent = os.path.normpath(parent)
+    return child == parent or child.startswith(parent + os.sep)
+
+
+def is_ignored(session: Session, ignored: list = None) -> bool:
+    if ignored is None:
+        ignored = load_ignored()
+    if not ignored or not session.cwd:
+        return False
+    return any(_within(session.cwd, d) for d in ignored)
+
+
+def filter_ignored(sessions: list, ignored: list = None) -> list:
+    """去掉落在被忽略文件夹内的会话。"""
+    if ignored is None:
+        ignored = load_ignored()
+    if not ignored:
+        return list(sessions)
+    return [s for s in sessions if not is_ignored(s, ignored)]
+
+
 # ---- 扫描 ----
 def scan_sessions(include_trash: bool = False) -> list[Session]:
     sessions = []

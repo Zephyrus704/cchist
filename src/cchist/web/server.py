@@ -36,18 +36,21 @@ def _sessions_payload(include_trash: bool = False):
 
 @app.get("/api/sessions")
 def api_sessions(q: str = "", fulltext: bool = False, sort: str = "time",
-                 reverse: bool = True, trash: bool = False):
+                 reverse: bool = True, trash: bool = False,
+                 favorites_only: bool = False):
     if trash:
         sessions = core.scan_trash()
     else:
-        sessions = core.scan_sessions(include_trash=False)
+        sessions = core.filter_ignored(core.scan_sessions(include_trash=False))
     if q:
         if fulltext:
             sessions = [s for s in sessions if core.full_text_search(q, s)]
         else:
             sessions = [s for s in sessions if core.matches(s, q)]
-    sessions = core.sort_sessions(sessions, sort, reverse)
     favs = core.load_favorites()
+    if favorites_only and not trash:
+        sessions = [s for s in sessions if s.session_id in favs]
+    sessions = core.sort_sessions(sessions, sort, reverse)
     out = []
     for s in sessions:
         d = s.to_dict()
@@ -110,6 +113,17 @@ def api_lang():
             "empty_count": "空对话" if zh else "Empty",
             "orphan_count": "孤儿会话" if zh else "Orphaned",
             "select_hint": "选择左侧对话查看详情" if zh else "Select a session to view details",
+            "favorites_only": "只看收藏" if zh else "Favorites only",
+            "fav_on": "只看收藏:开" if zh else "Favorites: ON",
+            "fav_off": "只看收藏:关" if zh else "Favorites: OFF",
+            "no_favorites": "还没有收藏任何对话" if zh else "No favorites yet",
+            "manage_ignored": "管理忽略的文件夹" if zh else "Manage ignored folders",
+            "ignored_title": "被忽略的文件夹" if zh else "Ignored folders",
+            "ignored_empty": "还没有忽略任何文件夹" if zh else "No ignored folders yet",
+            "ignored_added": "已忽略" if zh else "Ignored",
+            "ignored_removed": "已取消忽略" if zh else "Un-ignored",
+            "confirm_ignore": ("忽略此文件夹?其下所有对话将被隐藏(不删除,可恢复)。" if zh
+                               else "Ignore this folder? Sessions inside will be hidden (not deleted; recoverable)."),
         },
     }
 
@@ -226,6 +240,28 @@ def api_cleanup():
     return {"cleaned": ok, "errors": len(errors)}
 
 
+@app.get("/api/ignored")
+def api_ignored_list():
+    """返回已忽略的文件夹列表。"""
+    return {"dirs": core.load_ignored()}
+
+
+@app.post("/api/ignored")
+def api_ignored_add(path: str):
+    """把一个文件夹加入忽略列表。"""
+    import os
+    p = os.path.normpath(os.path.expanduser(path))
+    dirs = core.add_ignored(p)
+    return {"dirs": dirs, "added": p}
+
+
+@app.delete("/api/ignored/{path:path}")
+def api_ignored_remove(path: str):
+    """从忽略列表移除一个文件夹(会话重新可见)。"""
+    dirs = core.remove_ignored(path)
+    return {"dirs": dirs, "removed": path}
+
+
 @app.post("/api/shutdown")
 def api_shutdown():
     """从网页停止服务器(优雅退出)。"""
@@ -259,5 +295,4 @@ def run_web(host: str = "127.0.0.1", port: int = 8770, open_browser: bool = True
         uvicorn.run(app, host=host, port=port, log_level="warning")
     except KeyboardInterrupt:
         print("\ncchist Web 已停止。")
-    return 0
     return 0

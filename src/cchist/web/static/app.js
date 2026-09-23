@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 const $ = (s) => document.querySelector(s);
-const state = { q: "", fulltext: false, sort: "time", reverse: true, trash: false, active: null };
+const state = { q: "", fulltext: false, sort: "time", reverse: true, trash: false, active: null, favoritesOnly: false };
 let L = {};  // 语言文案,启动时从 /api/lang 载入
 
 function toast(msg) {
@@ -31,6 +31,9 @@ function applyStaticLabels() {
   $("#sortSize").textContent = L.sort_size;
   $("#detailPlaceholder").textContent = L.select_hint;
   $("#statsModalTitle").textContent = L.stats_title;
+  $("#favsBtn").textContent = L.favorites_only;
+  $("#ignoredBtn").textContent = L.manage_ignored;
+  $("#ignoredModalTitle").textContent = L.ignored_title;
 }
 
 async function loadStats() {
@@ -53,6 +56,7 @@ async function loadList() {
   const p = new URLSearchParams({
     q: state.q, fulltext: state.fulltext, sort: state.sort,
     reverse: state.reverse, trash: state.trash,
+    favorites_only: state.favoritesOnly,
   });
   const data = await api("/api/sessions?" + p);
   const list = $("#list");
@@ -150,6 +154,30 @@ async function cleanup() {
   loadList(); loadStats();
 }
 
+async function showIgnored() {
+  const data = await api("/api/ignored");
+  const body = $("#ignoredBody");
+  if (!data.dirs.length) {
+    body.innerHTML = `<p style="color:var(--muted)">${L.ignored_empty}</p>`;
+  } else {
+    body.innerHTML = `<ul class="ignored-list">${
+      data.dirs.map(d => `
+        <li class="ignored-item">
+          <span class="ignored-path">${esc(d)}</span>
+          <button class="btn-sm danger" onclick="unignore(this,'${esc(d)}')">${L.ignored_removed}</button>
+        </li>`).join("")
+    }</ul>`;
+  }
+  $("#ignoredModal").classList.remove("hidden");
+}
+
+async function unignore(btn, path) {
+  await api(`/api/ignored/${encodeURIComponent(path)}`, {method:"DELETE"});
+  toast(L.ignored_removed + ": " + path);
+  showIgnored();
+  loadList();
+}
+
 async function shutdown() {
   if (!confirm(L.confirm_shutdown)) return;
   try { await fetch("/api/shutdown", {method:"POST"}); } catch(e) {}
@@ -211,6 +239,16 @@ $("#cleanupBtn").addEventListener("click", cleanup);
 $("#shutdownBtn").addEventListener("click", shutdown);
 $("#statsClose").addEventListener("click", () => $("#statsModal").classList.add("hidden"));
 $("#statsModal").addEventListener("click", (e) => { if (e.target.id === "statsModal") $("#statsModal").classList.add("hidden"); });
+
+$("#favsBtn").addEventListener("click", () => {
+  state.favoritesOnly = !state.favoritesOnly;
+  $("#favsBtn").classList.toggle("btn-primary", state.favoritesOnly);
+  loadList();
+});
+
+$("#ignoredBtn").addEventListener("click", showIgnored);
+$("#ignoredClose").addEventListener("click", () => $("#ignoredModal").classList.add("hidden"));
+$("#ignoredModal").addEventListener("click", (e) => { if (e.target.id === "ignoredModal") $("#ignoredModal").classList.add("hidden"); });
 
 // 初始化:先载入语言,再渲染
 (async function init() {

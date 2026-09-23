@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0] - 2026-09-23
+
+Two organizing features for large session collections.
+
+### Added
+- **Favorites-only view** — press `F` in the TUI (or the toolbar toggle in the web UI) to list starred sessions only
+- **Ignore folders** — press `i` to hide all sessions under the current session's folder, `I` to manage the ignore list. Persists across restarts, never deletes files, and un-ignore restores them anytime. Stored in `~/.claude/.cchist_config.json`; the web UI exposes `/api/ignored`.
+
 ## [0.3.0] - 2026-08-07
 
 Multi-agent support and public release.

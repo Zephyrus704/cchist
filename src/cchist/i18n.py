@@ -85,6 +85,24 @@ STRINGS = {
     "n_empty": ("空对话 {n} 个", "{n} empty"),
     "n_orphan": ("孤儿会话(目录已删) {n} 个", "{n} orphaned (dir deleted)"),
     "n_total": ("共 {n} 个", "{n} total"),
+    # 只看收藏
+    "favorites_only": ("只看收藏", "Favorites only"),
+    "fav_on": ("只看收藏:开(再按 F 关)", "Favorites only: ON (F to turn off)"),
+    "fav_off": ("只看收藏:关", "Favorites only: OFF"),
+    "no_favorites": ("还没有收藏任何对话。按 f 收藏当前项。", "No favorites yet. Press f to favorite one."),
+    # 忽略文件夹
+    "ignore_folder": ("忽略此文件夹", "Ignore this folder"),
+    "manage_ignored": ("管理忽略的文件夹", "Manage ignored folders"),
+    "ignored_title": ("被忽略的文件夹(不显示其中的对话,可恢复)", "Ignored folders (their sessions are hidden; recoverable)"),
+    "ignored_empty": ("还没有忽略任何文件夹。", "No ignored folders yet."),
+    "ignored_hint": ("↑/↓ 选择  ·  Enter / r 取消忽略  ·  Esc 关闭",
+                     "↑/↓ move  ·  Enter / r: un-ignore  ·  Esc: close"),
+    "confirm_ignore": ("忽略此文件夹?其下所有对话将从列表隐藏(不删除,可在「管理忽略」里恢复):",
+                       "Ignore this folder? All its sessions will be hidden (not deleted; restore via Manage ignored):"),
+    "ignored_added": ("已忽略:{path}", "Ignored: {path}"),
+    "ignored_removed": ("已取消忽略:{path}", "Un-ignored: {path}"),
+    "no_cwd_ignore": ("此会话没有已知目录,无法忽略。", "This session has no known folder to ignore."),
+    "ignored_count": ("已忽略 {n} 个文件夹", "{n} folder(s) ignored"),
 }
 
 _lang = None

@@ -185,3 +185,54 @@ def test_codex_trash_roundtrip(fake_codex):
     assert ts.provider == "codex"   # 回收站保留了 provider
     core.restore_from_trash(ts)
     assert len(core.scan_sessions()) == 1
+
+
+# ---- 忽略文件夹 ----
+def test_ignore_add_load_remove(fake_claude):
+    proj_a = str(fake_claude["tmp"] / "proj-a")
+    dirs = core.add_ignored(proj_a)
+    assert proj_a in dirs
+    assert proj_a in core.load_ignored()
+    # 重复加入不产生重复
+    core.add_ignored(proj_a)
+    assert core.load_ignored().count(proj_a) == 1
+    # 移除后清空
+    assert core.remove_ignored(proj_a) == []
+    assert core.load_ignored() == []
+
+
+def test_ignore_persists_to_config_file(fake_claude):
+    proj_a = str(fake_claude["tmp"] / "proj-a")
+    core.add_ignored(proj_a)
+    # 落盘到 .cchist_config.json 的 ignored_dirs,重开(重新读文件)仍在
+    assert config.config_file().exists()
+    assert proj_a in core.load_ignored()
+
+
+def test_ignore_filter_hides_and_restores(fake_claude):
+    proj_a = str(fake_claude["tmp"] / "proj-a")
+    core.add_ignored(proj_a)
+    filtered = core.filter_ignored(core.scan_sessions())
+    ids = {s.session_id[:4] for s in filtered}
+    assert "aaaa" not in ids           # proj-a 下的会话被隐藏
+    assert "bbbb" in ids and "cccc" in ids
+    # 取消忽略 → 全部恢复
+    core.remove_ignored(proj_a)
+    assert len(core.filter_ignored(core.scan_sessions())) == 3
+
+
+def test_ignore_within_no_prefix_false_match():
+    # 前缀陷阱:/x/proj 不应命中同级的 /x/proj-extra
+    assert core._within("/x/proj-extra", "/x/proj") is False
+    assert core._within("/x/proj/sub", "/x/proj") is True
+    assert core._within("/x/proj", "/x/proj") is True
+
+
+def test_ignore_never_deletes_files(fake_claude):
+    proj_a = str(fake_claude["tmp"] / "proj-a")
+    s = next(x for x in core.scan_sessions() if x.session_id.startswith("aaaa"))
+    orig_path = s.path
+    core.add_ignored(proj_a)
+    # 只是过滤显示,原始 jsonl 文件必须仍在
+    import os
+    assert os.path.exists(orig_path)

@@ -9,7 +9,8 @@ from textual.command import CommandPalette
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.reactive import reactive
-from textual.widgets import DataTable, Footer, Header, Input, Static
+from textual.widgets import DataTable, Footer, Header, Input, Static, OptionList
+from textual.widgets.option_list import Option
 from textual.screen import ModalScreen, Screen
 from rich.text import Text
 
@@ -85,6 +86,59 @@ class PreviewPanel(Static):
         self.update(t)
 
 
+class IgnoredScreen(ModalScreen):
+    """管理被忽略的文件夹:查看清单、按 Enter/r 取消忽略、Esc 关闭。
+    取消忽略只是把目录从清单移除,其下对话会重新显示——从不删文件。"""
+
+    def compose(self) -> ComposeResult:
+        dirs = core.load_ignored()
+        home = os.path.expanduser("~")
+        with Vertical(id="ig-box"):
+            yield Static(t("ignored_title"), id="ig-title")
+            if dirs:
+                opts = []
+                for d in dirs:
+                    label = ("~" + d[len(home):]) if d.startswith(home) else d
+                    opts.append(Option(label, id=d))
+                yield OptionList(*opts, id="ig-list")
+                yield Static(t("ignored_hint"), id="ig-hint")
+            else:
+                yield Static(t("ignored_empty"), id="ig-empty")
+                yield Static("Esc", id="ig-hint")
+
+    def on_mount(self):
+        try:
+            self.query_one("#ig-list", OptionList).focus()
+        except Exception:
+            pass
+
+    def _unignore(self, path: str):
+        core.remove_ignored(path)
+        self.notify(t("ignored_removed", path=path))
+        self.dismiss(True)
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected):
+        # Enter 选中某项 -> 取消忽略
+        if event.option.id:
+            self._unignore(event.option.id)
+
+    def on_key(self, event):
+        if event.key == "escape":
+            event.stop()
+            self.dismiss(False)
+        elif event.key == "r":
+            event.stop()
+            try:
+                ol = self.query_one("#ig-list", OptionList)
+            except Exception:
+                return
+            idx = ol.highlighted
+            if idx is not None and 0 <= idx < ol.option_count:
+                opt = ol.get_option_at_index(idx)
+                if opt.id:
+                    self._unignore(opt.id)
+
+
 class CChistApp(App):
     CSS = """
     Screen { layout: vertical; }
@@ -100,6 +154,12 @@ class CChistApp(App):
     #confirm-msg { height: auto; margin-bottom: 1; }
     #confirm-hint { height: auto; }
     #status { dock: bottom; height: 1; background: $panel; color: $text-muted; padding: 0 1; }
+    #ig-box {
+        width: 80; height: auto; max-height: 80%; padding: 1 2;
+        border: thick $primary; background: $surface;
+    }
+    #ig-title { height: auto; margin-bottom: 1; text-style: bold; }
+    #ig-hint { height: auto; margin-top: 1; color: $text-muted; }
     """
 
     # 注意:resume 不再用 priority 绑定,改由行选中(enter/双击)触发,避免抢占模态弹窗的 enter
@@ -110,6 +170,9 @@ class CChistApp(App):
         Binding("e", "export", "导出"),
         Binding("c", "cleanup", "批量清理"),
         Binding("f", "favorite", "收藏"),
+        Binding("F", "favorites_only", "只看收藏"),
+        Binding("i", "ignore_folder", "忽略目录"),
+        Binding("I", "manage_ignored", "管理忽略"),
         Binding("t", "toggle_trash", "回收站"),
         Binding("r", "restore", "恢复"),
         Binding("g", "full_text", "全文搜索"),
@@ -123,6 +186,7 @@ class CChistApp(App):
     view_trash = reactive(False)
     query = reactive("")
     fulltext_mode = reactive(False)
+    favorites_only = reactive(False)
 
     # 排序状态
     COLUMN_SORT = {1: "time", 2: "provider", 3: "project", 4: "turns", 5: "size"}  # 列索引 -> 排序键
@@ -163,7 +227,8 @@ class CChistApp(App):
         if self.view_trash:
             self.all_sessions = core.scan_trash()
         else:
-            self.all_sessions = core.scan_sessions(include_trash=False)
+            # 忽略清单在这里生效:被忽略目录内的会话直接从列表隐藏(回收站视图不过滤)
+            self.all_sessions = core.filter_ignored(core.scan_sessions(include_trash=False))
         self.apply_filter()
 
     def apply_filter(self):
@@ -174,6 +239,9 @@ class CChistApp(App):
             base = [s for s in self.all_sessions if core.full_text_search(q, s)]
         else:
             base = [s for s in self.all_sessions if core.matches(s, q)]
+        if self.favorites_only and not self.view_trash:
+            favs = core.load_favorites()
+            base = [s for s in base if s.session_id in favs]
         self.filtered = core.sort_sessions(base, self.sort_key, self.sort_reverse)
         self.refresh_table()
 
@@ -235,6 +303,7 @@ class CChistApp(App):
         status = self.query_one("#status", Static)
         mode = "🗑 回收站" if self.view_trash else "会话列表"
         ft = " · 全文搜索" if self.fulltext_mode else ""
+        fav = " · " + t("favorites_only") if self.favorites_only and not self.view_trash else ""
         sort_name = {"time": "时间", "provider": "来源", "project": "项目", "turns": "轮数", "size": "大小"}[self.sort_key]
         arrow = "↓" if self.sort_reverse else "↑"
         n = len(self.filtered)
@@ -244,7 +313,7 @@ class CChistApp(App):
         else:
             extra = f"回收站 {len(core.scan_trash())} 项"
         filt = f"  过滤 {n}/{total}" if self.query else f"  共 {total}"
-        status.update(f" {mode}{ft}{filt}  ·  排序:{sort_name}{arrow}  ·  {extra}")
+        status.update(f" {mode}{ft}{fav}{filt}  ·  排序:{sort_name}{arrow}  ·  {extra}")
 
     def current_session(self) -> core.Session | None:
         table = self.query_one("#table", DataTable)
@@ -290,6 +359,7 @@ class CChistApp(App):
             yield SystemCommand("返回会话列表", "退出回收站视图", self.action_toggle_trash)
         else:
             yield SystemCommand("查看回收站", "浏览已删除的会话并可恢复", self.action_toggle_trash)
+        yield SystemCommand(t("manage_ignored"), t("ignored_title"), self.action_manage_ignored)
         yield SystemCommand("回收站目录位置", f"{config.trash_dir()}", self._show_trash_path)
         # 中文版的通用命令(替代 super 的英文 Theme/Quit/Screenshot)
         yield SystemCommand("切换主题", "更换界面配色主题", self.action_change_theme)
@@ -368,6 +438,38 @@ class CChistApp(App):
             now = core.toggle_favorite(s.session_id)
             self.notify(f"{'★ 已收藏' if now else '取消收藏'}:{s.project_label}")
             self.refresh_table()
+
+    def action_favorites_only(self):
+        self.favorites_only = not self.favorites_only
+        self.apply_filter()
+        if self.favorites_only:
+            favs = core.load_favorites()
+            if not favs:
+                self.notify(t("no_favorites"), timeout=5)
+            else:
+                self.notify(t("fav_on"), timeout=3)
+        else:
+            self.notify(t("fav_off"), timeout=2)
+
+    def action_ignore_folder(self):
+        if self.view_trash:
+            return
+        s = self.current_session()
+        if not s or not s.cwd:
+            self.notify(t("no_cwd_ignore"), severity="warning")
+            return
+        path = s.cwd
+
+        def do():
+            core.add_ignored(path)
+            self.notify(t("ignored_added", path=path), timeout=4)
+            self.reload()
+
+        self.push_screen(ConfirmScreen(
+            f"{t('confirm_ignore')}\n{path}", do))
+
+    def action_manage_ignored(self):
+        self.push_screen(IgnoredScreen(), lambda _: self.reload())
 
     def action_delete(self):
         s = self.current_session()
