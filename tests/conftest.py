@@ -30,7 +30,7 @@ def fake_claude(tmp_path, monkeypatch):
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / ".codex-empty"))
 
     from cchist import core
-    core._parse_cache.clear()
+    core.reset_cache()
 
     # 正常对话
     _write_session(projects, "-home-u-proj-a", "aaaa1111-0000-0000-0000-000000000001",
@@ -80,7 +80,7 @@ def fake_codex(tmp_path, monkeypatch):
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / ".claude-empty"))
 
     from cchist import core
-    core._parse_cache.clear()
+    core.reset_cache()
 
     _write_codex_session(sessions, "019fd096-cbef-73a3-a24a-000000000001",
                          str(tmp_path / "proj-x"),

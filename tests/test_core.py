@@ -236,3 +236,55 @@ def test_ignore_never_deletes_files(fake_claude):
     # 只是过滤显示,原始 jsonl 文件必须仍在
     import os
     assert os.path.exists(orig_path)
+
+
+# ---- 持久化缓存 ----
+def test_disk_cache_created(fake_claude):
+    core.scan_sessions()
+    assert config.cache_file().exists()
+
+
+def test_disk_cache_avoids_reparse(fake_claude, monkeypatch):
+    """模拟新进程:内存清空但磁盘缓存保留,再次扫描应全部命中、不再读文件解析。"""
+    core.scan_sessions()                 # 首扫填充并落盘
+    core.reset_cache()                   # 清内存 + 重置懒加载标志(磁盘文件保留)
+    calls = []
+    orig = core.providers.CLAUDE._parse
+    monkeypatch.setattr(core.providers.CLAUDE, "_parse",
+                        lambda p: (calls.append(p), orig(p))[1])
+    sessions = core.scan_sessions()
+    assert len(sessions) == 3
+    assert calls == []                   # 命中磁盘缓存,没有任何重新解析
+
+
+def test_disk_cache_invalidates_on_change(fake_claude):
+    """文件内容变化(mtime/size 变)后,缓存失效并重新解析。"""
+    import json, os, time
+    s = next(x for x in core.scan_sessions() if x.session_id.startswith("aaaa"))
+    path = s.path
+    assert s.user_turns == 2
+    time.sleep(0.01)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps({"type": "user", "cwd": s.cwd,
+                            "message": {"content": "追加的新问题"}}) + "\n")
+    core.reset_cache()
+    s2 = next(x for x in core.scan_sessions() if x.session_id.startswith("aaaa"))
+    assert s2.user_turns == 3            # 反映了新增内容,说明确实重解析了
+
+
+def test_scan_skip_ignored_dirs(fake_claude):
+    """skip_ignored_dirs 让被忽略目录内的会话在扫描阶段就被跳过。"""
+    proj_a = str(fake_claude["tmp"] / "proj-a")
+    got = core.scan_sessions(skip_ignored_dirs=[proj_a])
+    ids = {s.session_id[:4] for s in got}
+    assert "aaaa" not in ids             # proj-a 下的会话被跳过
+    assert "bbbb" in ids and "cccc" in ids
+
+
+def test_rebuild_cache_clears_and_recreates(fake_claude):
+    core.scan_sessions()
+    assert config.cache_file().exists()
+    core.rebuild_cache()
+    assert not config.cache_file().exists()
+    assert len(core.scan_sessions()) == 3
+    assert config.cache_file().exists()  # 重扫后自动重建

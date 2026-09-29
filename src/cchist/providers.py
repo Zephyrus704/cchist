@@ -59,6 +59,11 @@ def _is_real_user_text(txt: str) -> bool:
 
 
 # ---- 解析结果:一个中性的字典,core 据此构造 Session ----
+# 首末句仅用于列表/预览显示(最多展示 300 字)与快速过滤;这里截断以免把 agent 会话
+# 里动辄几十 KB 的单条消息整段塞进内存与磁盘缓存。深度检索(全文搜索)另读原文件,不受影响。
+_MAX_PREVIEW = 1000
+
+
 def _parse_claude(path: str) -> dict:
     cwd = first = last_user = last_assistant = ""
     user_turns = assistant_turns = 0
@@ -86,7 +91,8 @@ def _parse_claude(path: str) -> dict:
                 if txt:
                     assistant_turns += 1
                     last_assistant = txt
-    return dict(cwd=cwd, first=first, last_user=last_user, last_assistant=last_assistant,
+    return dict(cwd=cwd, first=first[:_MAX_PREVIEW], last_user=last_user[:_MAX_PREVIEW],
+                last_assistant=last_assistant[:_MAX_PREVIEW],
                 user_turns=user_turns, assistant_turns=assistant_turns)
 
 
@@ -121,7 +127,8 @@ def _parse_codex(path: str) -> dict:
                     if txt:
                         assistant_turns += 1
                         last_assistant = txt
-    return dict(cwd=cwd, first=first, last_user=last_user, last_assistant=last_assistant,
+    return dict(cwd=cwd, first=first[:_MAX_PREVIEW], last_user=last_user[:_MAX_PREVIEW],
+                last_assistant=last_assistant[:_MAX_PREVIEW],
                 user_turns=user_turns, assistant_turns=assistant_turns)
 
 

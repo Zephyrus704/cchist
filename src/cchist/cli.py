@@ -11,6 +11,8 @@ def main(argv=None) -> int:
         description="Claude Code 对话记录管理器 —— 跨项目浏览、搜索、回溯、删除对话。",
     )
     parser.add_argument("-v", "--version", action="version", version=f"cchist {__version__}")
+    parser.add_argument("--rebuild-cache", action="store_true",
+                        help="清空并重建对话解析缓存(缓存疑似陈旧/损坏时用),然后退出")
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("tui", help="启动终端界面(默认)")
@@ -21,6 +23,12 @@ def main(argv=None) -> int:
     web.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
 
     args = parser.parse_args(argv)
+
+    if args.rebuild_cache:
+        from . import core
+        core.rebuild_cache()
+        print("已清空解析缓存,下次启动将重新扫描全部对话。")
+        return 0
 
     if args.command == "web":
         from .web.server import run_web

@@ -43,6 +43,7 @@ Two frontends, one core:
 | 📊 **Stats** | Web overview: sessions-per-day trend and per-project breakdown |
 | ⭐ **Favorites** | Star important sessions, and filter to **favorites only** (`F`) |
 | 🙈 **Ignore folders** | Hide sessions under chosen folders (`i` / `I`); persists across restarts, never deletes, un-ignore anytime |
+| ⚡ **Fast on huge histories** | Persistent parse cache — thousands of sessions / GBs of transcripts load in well under a second after the first scan |
 | 🌐 **Bilingual** | English / 中文 UI (auto-detected, or set `CCHIST_LANG`) |
 | 🔧 **Portable** | Env-var overridable paths; Linux / macOS / Windows; Python 3.9+ |
 
@@ -65,6 +66,7 @@ git clone https://github.com/Zephyrus704/cchist.git && cd cchist && pip install 
 cchist              # terminal UI (default)
 cchist web          # web UI (opens the browser)
 cchist web --port 9000 --no-browser
+cchist --rebuild-cache   # clear & rebuild the parse cache (if the list ever looks stale)
 cchist --help
 ```
 
@@ -116,6 +118,12 @@ wrapper `os.execvp`s into the real tool so the terminal is handed over cleanly.
 
 cchist **never modifies** your conversation files — it only moves/deletes them,
 and deletes go to a recoverable trash first.
+
+Parsed session metadata is cached to `~/.claude/.cchist_cache.json` (keyed by file
+mtime + size), so only new or changed sessions are re-read on later launches — the
+difference between an 11-second and a sub-second start on a multi-GB history.
+Ignored folders are skipped before their (often huge) files are fully read. Run
+`cchist --rebuild-cache`, or "Rebuild cache" in the command palette, if it ever looks stale.
 
 Override storage locations with `CLAUDE_CONFIG_DIR` and `CODEX_HOME`.
 

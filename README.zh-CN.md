@@ -34,6 +34,7 @@ Claude Code 和 Codex 会把每次对话散落在各自的项目目录里
 | 📊 **统计** | 网页端概览：每日对话量趋势、项目分布 |
 | ⭐ **收藏** | 重要对话打星，可一键**只看收藏**(`F`) |
 | 🙈 **忽略目录** | 隐藏指定文件夹下的对话(`i` / `I`)；退出重开仍生效，从不删文件，随时可恢复 |
+| ⚡ **海量对话不卡** | 持久化解析缓存——上千个会话/数 GB 记录，首次扫描后再打开都在一秒内加载 |
 | 🌐 **中英双语** | 界面自动识别语言，或设 `CCHIST_LANG=zh/en` |
 | 🔧 **可移植** | 路径可用环境变量覆盖；Linux/macOS/Windows；Python 3.9+ |
 
@@ -55,6 +56,7 @@ git clone https://github.com/Zephyrus704/cchist.git && cd cchist && pip install 
 ```bash
 cchist              # 终端界面(默认)
 cchist web          # 网页界面(自动开浏览器)
+cchist --rebuild-cache   # 清空并重建解析缓存(列表看起来不对时用)
 cchist --help
 ```
 
@@ -101,6 +103,11 @@ cchist 只读它们。`providers.py` 里的 `Provider` 抽象封装了每个工�
 可用 `CLAUDE_CONFIG_DIR`、`CODEX_HOME` 覆盖存储位置。
 
 cchist **不修改**任何对话文件，只做移动/删除，且删除先进回收站。
+
+已解析的会话元数据会缓存到 `~/.claude/.cchist_cache.json`(按文件 mtime + 大小做键)，
+之后启动只重读新增/变动的会话——数 GB 记录从 11 秒启动降到一秒内。被忽略的目录
+在读取(往往很大的)文件全文前就跳过。若列表看起来不对，运行 `cchist --rebuild-cache`
+或在命令面板选「重建缓存」。
 
 ## License
 

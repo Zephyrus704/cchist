@@ -150,18 +150,122 @@ def _session_id_from_path(path: str, provider_name: str) -> str:
     return base
 
 
-# 解析结果缓存:path -> (mtime, Session)。避免重复扫描时反复读大文件。
-_parse_cache: dict = {}
+# 解析结果缓存:path -> Session。避免重复扫描时反复读大文件。
+# 内存层(_parse_cache)在单进程内生效;磁盘层(cache_file)让缓存跨进程存活——
+# 这是性能关键:每次启动 cchist 都是新进程,没有磁盘缓存就得把全部(可能数 GB)
+# 会话文件重新逐行解析一遍。缓存按 path 存,失效判据是 mtime 或 size 变化。
+_CACHE_VERSION = 1
+_parse_cache: dict = {}     # path -> Session
+_disk_loaded = False        # 磁盘缓存是否已载入本进程(懒加载,只载一次)
+_cache_dirty = False        # 有新解析/变更待落盘
+
+
+def _load_disk_cache():
+    """把磁盘缓存载入内存,只在本进程首次需要时执行一次。容错:文件缺失/损坏/版本不符都当空缓存。"""
+    global _disk_loaded
+    if _disk_loaded:
+        return
+    _disk_loaded = True
+    cf = config.cache_file()
+    try:
+        data = json.loads(cf.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return
+    if not isinstance(data, dict) or data.get("version") != _CACHE_VERSION:
+        return
+    for path, fields in data.get("entries", {}).items():
+        if path in _parse_cache:
+            continue
+        try:
+            _parse_cache[path] = Session(**fields)
+        except (TypeError, ValueError):
+            continue
+
+
+def _flush_disk_cache():
+    """把内存缓存原子写回磁盘(仅在有变更时)。回收站条目与已不存在的文件不落盘。"""
+    global _cache_dirty
+    if not _cache_dirty:
+        return
+    entries = {}
+    for path, sess in _parse_cache.items():
+        if sess.in_trash:
+            continue
+        if not os.path.exists(path):   # 顺带清理已删除文件的陈旧条目,防止缓存无限膨胀
+            continue
+        entries[path] = asdict(sess)
+    cf = config.cache_file()
+    tmp = cf.with_name(cf.name + ".tmp")
+    try:
+        tmp.write_text(json.dumps({"version": _CACHE_VERSION, "entries": entries},
+                                  ensure_ascii=False), encoding="utf-8")
+        os.replace(str(tmp), str(cf))
+        _cache_dirty = False
+    except OSError:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+
+
+def reset_cache():
+    """清空内存缓存并重置懒加载标志(测试隔离用;不动磁盘文件)。"""
+    global _disk_loaded, _cache_dirty
+    _parse_cache.clear()
+    _disk_loaded = False
+    _cache_dirty = False
+
+
+def rebuild_cache():
+    """删除磁盘缓存并清空内存,使下次扫描全量重解析。缓存疑似陈旧/损坏时用。"""
+    global _disk_loaded, _cache_dirty
+    _parse_cache.clear()
+    try:
+        config.cache_file().unlink()
+    except OSError:
+        pass
+    _disk_loaded = True   # 已知磁盘为空,无需再尝试载入
+    _cache_dirty = False
+
+
+def _peek_cwd(path: str, provider_name: str, max_lines: int = 200) -> str:
+    """只读文件开头若干行,尽快取出 cwd。用于"忽略目录跳过解析":
+    避免为判断归属而通读一个可能几十 MB 的大文件。取不到就返回 ""(交给完整解析)。"""
+    try:
+        with open(path, encoding="utf-8", errors="ignore") as f:
+            for i, line in enumerate(f):
+                if i >= max_lines:
+                    break
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    d = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if provider_name == "codex":
+                    payload = d.get("payload", {})
+                    if d.get("type") in ("session_meta", "turn_context") and payload.get("cwd"):
+                        return payload["cwd"]
+                else:
+                    if d.get("cwd"):
+                        return d["cwd"]
+    except OSError:
+        return ""
+    return ""
 
 
 def parse_session(path: str, in_trash: bool = False, provider_name: str = "claude") -> Session | None:
+    global _cache_dirty
     try:
         st = os.stat(path)
     except OSError:
         return None
+    _load_disk_cache()
     cached = _parse_cache.get(path)
-    if cached and cached[0] == st.st_mtime and cached[1].in_trash == in_trash:
-        return cached[1]
+    if (cached and cached.mtime == st.st_mtime and cached.size == st.st_size
+            and cached.in_trash == in_trash):
+        return cached
 
     prov = providers.get(provider_name)
     session_id = _session_id_from_path(path, provider_name)
@@ -187,7 +291,8 @@ def parse_session(path: str, in_trash: bool = False, provider_name: str = "claud
         provider=provider_name,
         in_trash=in_trash,
     )
-    _parse_cache[path] = (st.st_mtime, session)
+    _parse_cache[path] = session
+    _cache_dirty = True
     return session
 
 
@@ -306,13 +411,45 @@ def filter_ignored(sessions: list, ignored: list = None) -> list:
 
 
 # ---- 扫描 ----
-def scan_sessions(include_trash: bool = False) -> list[Session]:
+def _should_skip_ignored(path: str, provider_name: str, ignored: list) -> bool:
+    """在完整解析前判断该文件是否落在被忽略目录内,用真实 cwd 判断(不误伤)。
+    命中则可跳过通读大文件。注意:目录名 slug 有歧义且有时非路径编码,所以必须读 cwd,不能反推目录名。"""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return False
+    cached = _parse_cache.get(path)
+    if cached and cached.mtime == st.st_mtime and cached.size == st.st_size and cached.cwd:
+        return is_ignored(cached, ignored)
+    cwd = _peek_cwd(path, provider_name)
+    if not cwd:
+        return False   # 取不到 cwd 就别跳过,留给完整解析,保证正确性
+    return any(_within(cwd, d) for d in ignored)
+
+
+def scan_sessions(include_trash: bool = False, skip_ignored_dirs: list = None,
+                  on_progress=None) -> list[Session]:
+    """扫描全部会话。
+    - skip_ignored_dirs: 传入忽略目录清单时,落在其中的会话在解析前就跳过(省去通读大文件);
+      调用方仍应对结果再跑一次 filter_ignored 作为权威过滤(覆盖缓存命中的忽略项)。
+    - on_progress(done, total): 冷扫描进度回调,供 UI 显示,避免看起来卡死。
+    """
+    _load_disk_cache()
+    ignored = skip_ignored_dirs or []
+    all_paths = [(prov, p) for prov in providers.ALL for p in prov.scan()]
+    total = len(all_paths)
     sessions = []
-    for prov in providers.ALL:
-        for path in prov.scan():
-            s = parse_session(path, provider_name=prov.name)
-            if s:
-                sessions.append(s)
+    for i, (prov, path) in enumerate(all_paths):
+        if ignored and _should_skip_ignored(path, prov.name, ignored):
+            if on_progress and (i % 50 == 0 or i == total - 1):
+                on_progress(i + 1, total)
+            continue
+        s = parse_session(path, provider_name=prov.name)
+        if s:
+            sessions.append(s)
+        if on_progress and (i % 50 == 0 or i == total - 1):
+            on_progress(i + 1, total)
+    _flush_disk_cache()
     if include_trash:
         sessions.extend(scan_trash())
     sessions.sort(key=lambda s: s.mtime, reverse=True)
@@ -344,6 +481,7 @@ def find_session(session_id: str, include_trash: bool = True) -> Session | None:
 # ---- 回收站 ----
 def move_to_trash(session: Session) -> str:
     """把会话移入回收站,记录原始路径与来源工具以便恢复。返回回收站中的新路径。"""
+    global _cache_dirty
     td = config.trash_dir()
     td.mkdir(parents=True, exist_ok=True)
     dest = td / f"{session.session_id}.jsonl"
@@ -356,11 +494,13 @@ def move_to_trash(session: Session) -> str:
     except (OSError, shutil.Error) as e:
         raise RuntimeError(f"移入回收站失败: {e}")
     _parse_cache.pop(session.path, None)
+    _cache_dirty = True   # 让下次落盘清理该文件的陈旧缓存条目
     return str(dest)
 
 
 def restore_from_trash(session: Session) -> str:
     """从回收站恢复到原始位置。"""
+    global _cache_dirty
     td = config.trash_dir()
     meta = td / f"{session.session_id}.origin"
     pv = td / f"{session.session_id}.provider"
@@ -378,6 +518,7 @@ def restore_from_trash(session: Session) -> str:
     except (OSError, shutil.Error) as e:
         raise RuntimeError(f"恢复失败: {e}")
     _parse_cache.pop(session.path, None)
+    _cache_dirty = True
     return origin
 
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.0] - 2026-09-29
+
+Performance: stay fast on huge histories (thousands of sessions / multiple GB).
+
+### Added
+- **Persistent parse cache** — parsed session metadata is cached to `~/.claude/.cchist_cache.json` (keyed by file mtime + size). After the first scan, later launches only re-read new or changed sessions. On a ~4000-session / 4.8 GB history this turns an ~11.5s cold start into ~0.1s.
+- **Ignore folders now skip parsing** — sessions under an ignored folder are detected by a cheap header probe (real `cwd`, not the ambiguous dir slug) and skipped before their (often huge) files are read in full. Cold scan with the big project ignored drops from ~11.5s to ~0.6s.
+- **Rebuild cache** — `cchist --rebuild-cache` and a "Rebuild cache" command-palette entry, for when the cache looks stale or corrupt.
+- **Cold-scan progress** — the first (uncached) scan runs in a background thread and shows `Scanning… x/N` instead of a frozen screen.
+
+### Changed
+- Preview/search text fields are capped at 1000 chars in the parse layer (display truncates at 300; deep full-text search still reads the original file), keeping the cache small (~14 MB instead of ~64 MB on 4000 sessions).
+
 ## [0.4.0] - 2026-09-23
 
 Two organizing features for large session collections.

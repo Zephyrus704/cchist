@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 
 from textual.app import App, ComposeResult, SystemCommand
+from textual import work
 from textual.command import CommandPalette
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -219,16 +220,39 @@ class CChistApp(App):
         table.add_column(t("col_turns"), key="turns", width=7)
         table.add_column(t("col_size"), key="size", width=6)
         table.add_column(t("col_path"), key="path")
-        self.reload()
+        self._initial_load()
         table.focus()
 
     # ---- 数据 ----
+    @work(thread=True, exclusive=True)
+    def _initial_load(self):
+        """首次加载在后台线程扫描:冷启动可能要读数 GB 文件,放主线程会冻结界面。
+        进度回调实时更新状态栏;有磁盘缓存时会瞬间完成。"""
+        def prog(done, total):
+            self.call_from_thread(self._set_loading, done, total)
+        if self.view_trash:
+            sessions = core.scan_trash()
+        else:
+            ig = core.load_ignored()
+            sessions = core.filter_ignored(
+                core.scan_sessions(include_trash=False, skip_ignored_dirs=ig, on_progress=prog), ig)
+        self.call_from_thread(self._apply_loaded, sessions)
+
+    def _set_loading(self, done, total):
+        self.query_one("#status", Static).update(t("loading", done=done, total=total))
+
+    def _apply_loaded(self, sessions):
+        self.all_sessions = sessions
+        self.apply_filter()
+
     def reload(self):
         if self.view_trash:
             self.all_sessions = core.scan_trash()
         else:
             # 忽略清单在这里生效:被忽略目录内的会话直接从列表隐藏(回收站视图不过滤)
-            self.all_sessions = core.filter_ignored(core.scan_sessions(include_trash=False))
+            ig = core.load_ignored()
+            self.all_sessions = core.filter_ignored(
+                core.scan_sessions(include_trash=False, skip_ignored_dirs=ig), ig)
         self.apply_filter()
 
     def apply_filter(self):
@@ -360,6 +384,7 @@ class CChistApp(App):
         else:
             yield SystemCommand("查看回收站", "浏览已删除的会话并可恢复", self.action_toggle_trash)
         yield SystemCommand(t("manage_ignored"), t("ignored_title"), self.action_manage_ignored)
+        yield SystemCommand(t("rebuild_cache"), t("rebuild_cache_help"), self.action_rebuild_cache)
         yield SystemCommand("回收站目录位置", f"{config.trash_dir()}", self._show_trash_path)
         # 中文版的通用命令(替代 super 的英文 Theme/Quit/Screenshot)
         yield SystemCommand("切换主题", "更换界面配色主题", self.action_change_theme)
@@ -470,6 +495,11 @@ class CChistApp(App):
 
     def action_manage_ignored(self):
         self.push_screen(IgnoredScreen(), lambda _: self.reload())
+
+    def action_rebuild_cache(self):
+        core.rebuild_cache()
+        self.notify(t("cache_rebuilt"), timeout=3)
+        self._initial_load()
 
     def action_delete(self):
         s = self.current_session()

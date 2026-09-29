@@ -103,6 +103,12 @@ STRINGS = {
     "ignored_removed": ("已取消忽略:{path}", "Un-ignored: {path}"),
     "no_cwd_ignore": ("此会话没有已知目录,无法忽略。", "This session has no known folder to ignore."),
     "ignored_count": ("已忽略 {n} 个文件夹", "{n} folder(s) ignored"),
+    # 缓存 / 加载
+    "loading": ("扫描中… {done}/{total}", "Scanning… {done}/{total}"),
+    "rebuild_cache": ("重建缓存", "Rebuild cache"),
+    "rebuild_cache_help": ("清空并重新扫描所有对话(缓存疑似陈旧/损坏时用)",
+                           "Clear cache and rescan all sessions (use if the list seems stale)"),
+    "cache_rebuilt": ("缓存已清空,正在重新扫描…", "Cache cleared, rescanning…"),
 }
 
 _lang = None

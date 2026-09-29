@@ -29,3 +29,8 @@ def favorites_file() -> Path:
 
 def config_file() -> Path:
     return claude_dir() / ".cchist_config.json"
+
+
+def cache_file() -> Path:
+    """持久化解析缓存:把已解析的会话元数据落盘,避免每次启动重扫 GB 级文件。"""
+    return claude_dir() / ".cchist_cache.json"
